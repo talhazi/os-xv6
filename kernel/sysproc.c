@@ -23,6 +23,20 @@ sys_getpid(void)
   return myproc()->pid;
 }
 
+
+uint64
+sys_pause_system(void)
+{
+  return 0;
+}
+
+
+uint64
+sys_kill_system(void)
+{
+  return 0;
+}
+
 uint64
 sys_fork(void)
 {
