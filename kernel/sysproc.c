@@ -23,20 +23,6 @@ sys_getpid(void)
   return myproc()->pid;
 }
 
-
-uint64
-sys_pause_system(void)
-{
-  return 0;
-}
-
-
-uint64
-sys_kill_system(void)
-{
-  return 0;
-}
-
 uint64
 sys_fork(void)
 {
@@ -108,4 +94,26 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+
+uint64
+sys_pause_system(void)
+{
+  int n;
+  if(argint(0, &n) < 0)
+    return -1;
+  return pause_system(n);
+}
+
+
+uint64
+sys_kill_system(void)
+{
+  return kill_system();
+}
+
+uint64 sys_print_stats(void)
+{
+  return print_stats();
 }

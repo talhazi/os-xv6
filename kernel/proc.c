@@ -14,6 +14,9 @@ struct proc proc[NPROC];
 
 struct proc *initproc;
 
+struct spinlock pauseLock;
+uint pauseUntilTick = 0;
+
 int nextpid = 1;
 struct spinlock pid_lock;
 
@@ -768,4 +771,40 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+int
+pause_system(int seconds)
+{
+  uint ticksBySeconds = seconds * 10; // convert seconds to ticks(10 ms) 
+  pauseUntilTick = ticks + ticksBySeconds;
+  yield();
+  return 0;
+}
+
+int 
+kill_system(void)
+{
+  struct proc *p;
+  struct proc *curr_p = myproc();
+  acquire(&curr_p->lock);
+  for(p = proc; p < &proc[NPROC]; p++){
+    if(p->pid != 1 && p->pid != 2 && p->pid != curr_p->pid){  // make sure isn't init, shell or curr process
+      acquire(&p->lock);
+      p->killed = 1;
+      if(p->state == SLEEPING){
+        p->state = RUNNABLE;
+      }
+      release(&p->lock);
+    }
+  }
+  curr_p->killed = 1;
+  release(&curr_p->lock);
+  return 0;
+}
+
+int
+print_stats(void)
+{
+  return 0;
 }
