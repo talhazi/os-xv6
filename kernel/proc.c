@@ -662,11 +662,7 @@ int
 pause_system(int seconds)
 {
   uint ticksBySeconds = seconds * 10; // convert seconds to ticks(10 ms) 
-  acquire(&tickslock);
-  acquire(&pauseLock);
   pauseUntilTick = ticks + ticksBySeconds;
-  release(&pauseLock);
-  release(&tickslock);
   yield();
   return 0;
 }
@@ -675,23 +671,21 @@ int
 kill_system(void)
 {
   struct proc *p;
+  struct proc *curr_p = myproc();
+  acquire(&curr_p->lock);
   for(p = proc; p < &proc[NPROC]; p++){
-    acquire(&tickslock);
-    uint ticks0 = ticks;
-    acquire(&p->lock);
-    release(&tickslock);
-    if(p->pid != 1 && p->pid != 2){  // make sure isn't init or shell processes
+    if(p->pid != 1 && p->pid != 2 && p->pid != curr_p->pid){  // make sure isn't init, shell or curr process
+      acquire(&p->lock);
       p->killed = 1;
       if(p->state == SLEEPING){
-        p->sleeping_time=ticks0-p->last_sleeping_time;
-        // wake up process from sleep()
         p->state = RUNNABLE;
-        p->last_runnable_time  = ticks0;
       }
+      release(&p->lock);
     }
-    release(&p->lock);
   }
-  return -1;
+  curr_p->killed = 1;
+  release(&curr_p->lock);
+  return 0;
 }
 
 int
