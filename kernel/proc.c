@@ -6,6 +6,8 @@
 #include "proc.h"
 #include "defs.h"
 
+int rate=5;
+
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -243,6 +245,9 @@ userinit(void)
   p->cwd = namei("/");
 
   p->state = RUNNABLE;
+  acquire(&tickslock);
+  p->last_runnable_time=ticks;
+  release(&tickslock);
 
   release(&p->lock);
 }
@@ -313,6 +318,9 @@ fork(void)
 
   acquire(&np->lock);
   np->state = RUNNABLE;
+  acquire(&tickslock);
+  np->last_runnable_time=ticks;
+  release(&tickslock);
   release(&np->lock);
 
   return pid;
@@ -427,16 +435,10 @@ wait(uint64 addr)
   }
 }
 
-// Per-CPU process scheduler.
-// Each CPU calls scheduler() after setting itself up.
-// Scheduler never returns.  It loops, doing:
-//  - choose a process to run.
-//  - swtch to start running that process.
-//  - eventually that process transfers control
-//    via swtch back to the scheduler.
 void
-scheduler(void)
+DEFAULT_scheduler(void)
 {
+  printf("in DEFALUT scheduler\n");
   struct proc *p;
   struct cpu *c = mycpu();
   
@@ -462,6 +464,110 @@ scheduler(void)
       release(&p->lock);
     }
   }
+}
+
+void
+SJF_scheduler(void){
+  // printf("in SJF scheduler\n");
+
+  struct proc *p;
+  struct cpu *c = mycpu();
+  struct proc *p_torun=0;
+  
+  c->proc = 0;
+  uint nticks=0;
+  for(;;){
+    intr_on();
+    
+    int min_mean = __INT32_MAX__; 
+
+    for(p=proc; p < &proc[NPROC]; p++){
+      acquire(&p->lock);
+      if(p->state==RUNNABLE && p->mean_ticks<min_mean){
+        min_mean=p->mean_ticks;
+        p_torun=p;
+      }
+      release(&p->lock);
+    }
+
+    
+    if(p_torun != 0) {
+      acquire(&p_torun->lock);
+      if(p_torun->state==RUNNABLE){
+        p_torun->state = RUNNING;
+        c->proc = p_torun;
+
+        acquire(&tickslock);
+        nticks=ticks;
+        release(&tickslock);
+
+        swtch(&c->context, &p_torun->context);
+
+        acquire(&tickslock);
+        p_torun->last_ticks=ticks-nticks;
+        release(&tickslock);
+
+        p_torun->mean_ticks=((10-rate)*p_torun->mean_ticks+p_torun->last_ticks*(rate))/10;
+
+        c->proc = 0;
+      }
+
+      release(&p_torun->lock);
+    }
+  }
+}
+
+void
+FCFS_scheduler(void){
+
+  // printf("in FCFS\n");
+  struct proc *p;
+  struct cpu *c = mycpu();
+  struct proc *p_torun=0;
+  
+  c->proc = 0;
+  for(;;){
+    intr_on();
+    
+    int lowest_last_runnable = __INT32_MAX__; 
+
+    for(p=proc; p < &proc[NPROC]; p++){
+      acquire(&p->lock);
+      if(p->state==RUNNABLE && p->last_runnable_time<lowest_last_runnable){
+        lowest_last_runnable=p->last_runnable_time;
+        p_torun=p;
+      }
+      release(&p->lock);
+    }
+
+    
+    if(p_torun != 0) {
+      acquire(&p_torun->lock);
+      if(p_torun->state==RUNNABLE){
+        p_torun->state = RUNNING;
+        c->proc = p_torun;
+
+        swtch(&c->context, &p_torun->context);
+
+        c->proc = 0;
+      }
+
+      release(&p_torun->lock);
+    }
+  }
+}
+
+void
+scheduler(void) {
+#ifdef DEFAULT
+        DEFAULT_scheduler();
+#endif
+#ifdef SJF
+        SJF_scheduler();
+#endif
+#ifdef FCFS
+        FCFS_scheduler();
+#endif
 }
 
 // Switch to scheduler.  Must hold only p->lock
@@ -498,6 +604,9 @@ yield(void)
   struct proc *p = myproc();
   acquire(&p->lock);
   p->state = RUNNABLE;
+  acquire(&tickslock);
+  p->last_runnable_time=ticks;
+  release(&tickslock);
   sched();
   release(&p->lock);
 }
@@ -566,6 +675,9 @@ wakeup(void *chan)
       acquire(&p->lock);
       if(p->state == SLEEPING && p->chan == chan) {
         p->state = RUNNABLE;
+        acquire(&tickslock);
+        p->last_runnable_time=ticks;
+        release(&tickslock);
       }
       release(&p->lock);
     }
@@ -587,6 +699,9 @@ kill(int pid)
       if(p->state == SLEEPING){
         // Wake process from sleep().
         p->state = RUNNABLE;
+        acquire(&tickslock);
+        p->last_runnable_time=ticks;
+        release(&tickslock);
       }
       release(&p->lock);
       return 0;
