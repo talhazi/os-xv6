@@ -97,6 +97,9 @@ struct proc {
   uint last_sleeping_time;
   uint sleeping_time;
   uint runnable_time;
+  uint running_time;
+  int mean_ticks;
+  int last_ticks;
   
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process
@@ -110,8 +113,4 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
-
-  int mean_ticks;
-  int last_ticks;
-  uint last_runnable_time;
 };

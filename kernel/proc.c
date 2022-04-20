@@ -6,7 +6,6 @@
 #include "proc.h"
 #include "defs.h"
 
-int rate=5;
 
 struct cpu cpus[NCPU];
 
@@ -15,7 +14,18 @@ struct proc proc[NPROC];
 struct proc *initproc;
 
 struct spinlock pauseLock;
-uint pauseUntilTick = 0;
+uint tickToPause = 0;
+int pause_flag;
+int rate = 5;
+struct spinlock stats_lock;
+int number_of_existed_processes = 0;
+int sleeping_processes_mean = 0;
+int running_processes_mean = 0;
+int running_time_mean = 0;
+uint program_time = 0;
+uint start_time = 0;
+int cpu_utilization = 0;
+
 
 int nextpid = 1;
 struct spinlock pid_lock;
@@ -59,6 +69,9 @@ procinit(void)
       initlock(&p->lock, "proc");
       p->kstack = KSTACK((int) (p - proc));
   }
+  acquire(&tickslock);
+  start_time=ticks;
+  release(&tickslock);
 }
 
 // Must be called with interrupts disabled,
@@ -378,7 +391,7 @@ exit(int status)
   wakeup(p->parent);
   
   acquire(&p->lock);
-
+  updateStats();
   p->xstate = status;
   p->state = ZOMBIE;
 
@@ -441,7 +454,6 @@ wait(uint64 addr)
 void
 DEFAULT_scheduler(void)
 {
-  printf("in DEFALUT scheduler\n");
   struct proc *p;
   struct cpu *c = mycpu();
   
@@ -451,6 +463,16 @@ DEFAULT_scheduler(void)
     intr_on();
 
     for(p = proc; p < &proc[NPROC]; p++) {
+      //Support pause
+      if(pause_flag != 0){
+        while ((ticks - tickToPause) < 10*pause_flag)
+        {
+          acquire(&p->lock);
+          release(&p->lock);
+        }
+      }
+      pause_flag = 0;
+
       acquire(&p->lock);
       if(p->state == RUNNABLE) {
         // Switch to chosen process.  It is the process's job
@@ -458,11 +480,23 @@ DEFAULT_scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+
+        acquire(&tickslock);
+        uint tickStart = ticks;
+        release(&tickslock);
+        p->runnable_time = tickStart- p->last_runnable_time;
+
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
+
+        acquire(&tickslock);
+        uint tickEnd = ticks;
+        release(&tickslock);
+
+        p->running_time += tickEnd - tickStart;
       }
       release(&p->lock);
     }
@@ -471,8 +505,6 @@ DEFAULT_scheduler(void)
 
 void
 SJF_scheduler(void){
-  // printf("in SJF scheduler\n");
-
   struct proc *p;
   struct cpu *c = mycpu();
   struct proc *p_torun=0;
@@ -485,6 +517,16 @@ SJF_scheduler(void){
     int min_mean = __INT32_MAX__; 
 
     for(p=proc; p < &proc[NPROC]; p++){
+      //Support pause
+      if(pause_flag != 0){
+        while ((ticks - tickToPause) < 10*pause_flag)
+        {
+          acquire(&p->lock);
+          release(&p->lock);
+        }
+      }
+      pause_flag = 0;
+
       acquire(&p->lock);
       if(p->state==RUNNABLE && p->mean_ticks<min_mean){
         min_mean=p->mean_ticks;
@@ -523,7 +565,6 @@ SJF_scheduler(void){
 void
 FCFS_scheduler(void){
 
-  // printf("in FCFS\n");
   struct proc *p;
   struct cpu *c = mycpu();
   struct proc *p_torun=0;
@@ -535,6 +576,16 @@ FCFS_scheduler(void){
     int lowest_last_runnable = __INT32_MAX__; 
 
     for(p=proc; p < &proc[NPROC]; p++){
+      //Support pause
+      if(pause_flag != 0){
+        while ((ticks - tickToPause) < 10*pause_flag)
+        {
+          acquire(&p->lock);
+          release(&p->lock);
+        }
+      }
+      pause_flag = 0;
+
       acquire(&p->lock);
       if(p->state==RUNNABLE && p->last_runnable_time<lowest_last_runnable){
         lowest_last_runnable=p->last_runnable_time;
@@ -563,13 +614,22 @@ FCFS_scheduler(void){
 void
 scheduler(void) {
 #ifdef DEFAULT
+{
+        printf("in DEFALUT scheduler\n");
         DEFAULT_scheduler();
+}
 #endif
 #ifdef SJF
+{
+        printf("in SJF scheduler\n");
         SJF_scheduler();
+}
 #endif
 #ifdef FCFS
+{
+        printf("in FCFS\n");
         FCFS_scheduler();
+}
 #endif
 }
 
@@ -773,11 +833,28 @@ procdump(void)
   }
 }
 
+//Assuming process is locked
+void updateStats()
+{
+  struct proc *p = myproc();
+  acquire(&tickslock);
+  uint currentTicks = ticks;
+  release(&tickslock);
+  acquire(&stats_lock);
+  sleeping_processes_mean = ((sleeping_processes_mean*number_of_existed_processes) + p->sleeping_time)/(number_of_existed_processes +1);
+  running_processes_mean = ((running_processes_mean*number_of_existed_processes) + p->running_time)/(number_of_existed_processes +1);
+  running_time_mean = ((running_time_mean*number_of_existed_processes) + p->runnable_time)/(number_of_existed_processes +1);
+  program_time += p->running_time;
+  cpu_utilization = ((program_time*100)/(currentTicks - start_time));
+  number_of_existed_processes += 1;
+  release(&stats_lock);
+}
+
 int
 pause_system(int seconds)
 {
-  uint ticksBySeconds = seconds * 10; // convert seconds to ticks(10 ms) 
-  pauseUntilTick = ticks + ticksBySeconds;
+  pause_flag = seconds;
+  tickToPause = ticks;
   yield();
   return 0;
 }
@@ -806,5 +883,14 @@ kill_system(void)
 int
 print_stats(void)
 {
+  acquire(&stats_lock);
+  printf("-----> system performance statistics <----- \n");
+  printf("sleeping_processes_mean %d \n", sleeping_processes_mean);
+  printf("running_processes_mean %d \n", running_processes_mean);
+  printf("running_time_mean %d \n", running_time_mean);
+  printf("program_time %d \n", program_time);
+  printf("cpu_utilization %d \n", cpu_utilization);
+  printf("-----> end of statistics <----- \n");
+  release(&stats_lock);
   return 0;
 }

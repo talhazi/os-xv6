@@ -18,16 +18,6 @@ void pause_system_dem(int interval, int pause_seconds, int loop_size) {
     printf("\n");
 }
 
-void simple_test()){
-    // pause_system(2);
-    int pid = fork();
-    if(pid!=0){ //parent
-        int status;
-        wait(&status);
-        fprintf(2,"Child %d finished with exit status %d\n", pid, status);
-    } 
-    else //child
-        fprintf(2, "Child is running\n");
 void kill_system_dem(int interval, int loop_size) {
     int pid = getpid();
     for (int i = 0; i < loop_size; i++) {
@@ -42,7 +32,7 @@ void kill_system_dem(int interval, int loop_size) {
 }
 
 int main(int argc, char** argv){
-    pause_system_dem(100, 10, 1000);
+    pause_system_dem(100, 5, 1000);
     kill_system_dem(100, 1000);
     exit(0);
 }
