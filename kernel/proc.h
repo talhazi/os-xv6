@@ -93,7 +93,7 @@ struct proc {
   int xstate;                  // Exit status to be returned to parent's wait
   int pid;                     // Process ID
 
-  uint last_runnable_time;     // Last tick it moved to runnable;
+  uint last_runnable_time;
   uint last_sleeping_time;
   uint sleeping_time;
   uint runnable_time;
