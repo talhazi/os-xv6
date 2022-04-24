@@ -18,13 +18,12 @@ uint tickToPause = 0;
 int pause_flag;
 int rate = 5;
 struct spinlock stats_lock;
-int number_of_processes = 0;
-int sleeping_processes_mean = 0;
-int running_processes_mean = 0;
-int runnable_processes_mean = 0;
+uint sleeping_processes_mean = 0;
+uint running_processes_mean = 0;
+uint runnable_processes_mean = 0;
 uint program_time = 0;
 uint start_time = 0;
-int cpu_utilization = 0;
+uint cpu_utilization = 0;
 
 
 int nextpid = 1;
@@ -475,6 +474,12 @@ DEFAULT_scheduler(void)
         while ((ticks - tickToPause) < 10*pause_flag)
         {
           acquire(&p->lock);
+          if(p->state == RUNNING){
+            calc_time(p);
+            p->state = RUNNABLE;
+            p->curr_time = ticks;
+            p-> last_runnable_time = ticks;
+          }
           release(&p->lock);
         }
       }
@@ -518,6 +523,12 @@ SJF_scheduler(void){
         while ((ticks - tickToPause) < 10*pause_flag)
         {
           acquire(&p->lock);
+          if(p->state == RUNNING){
+            calc_time(p);
+            p->state = RUNNABLE;
+            p->curr_time = ticks;
+            p-> last_runnable_time = ticks;
+          }
           release(&p->lock);
         }
       }
@@ -573,6 +584,12 @@ FCFS_scheduler(void){
         while ((ticks - tickToPause) < 10*pause_flag)
         {
           acquire(&p->lock);
+          if(p->state == RUNNING){
+            calc_time(p);
+            p->state = RUNNABLE;
+            p->curr_time = ticks;
+            p-> last_runnable_time = ticks;
+          }
           release(&p->lock);
         }
       }
@@ -910,6 +927,6 @@ void
 calc_single_proc(struct proc *p)
 {
   sleeping_processes_mean = ((sleeping_processes_mean * NPROC) + p->sleeping_time) / (NPROC+1);
-  running_processes_mean = ((running_processes_mean * NPROC) + p->running_time) / (NPROC);
+  running_processes_mean = ((running_processes_mean * NPROC) + p->running_time) / (NPROC+1);
   runnable_processes_mean = ((runnable_processes_mean * NPROC) + p->runnable_time) / (NPROC+1);
 }
