@@ -99,8 +99,8 @@ void            scheduler(void) __attribute__((noreturn));
 void            SJF_scheduler(void)__attribute__((noreturn));
 void            FCFS_scheduler(void)__attribute__((noreturn));
 void            DEFAULT_scheduler(void) __attribute__((noreturn));
-void            calc_single_proc(struct proc *p);
-void            calc_time(struct proc *p);
+void            calc_processes_mean(struct proc *p);
+void            calc_ptime(struct proc *p);
 
 void            sched(void);
 void            sleep(void*, struct spinlock*);

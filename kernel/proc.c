@@ -256,7 +256,7 @@ userinit(void)
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
 
-  calc_time(p);
+  calc_ptime(p);
   p->state = RUNNABLE;
   p->curr_time = ticks;
   p->last_runnable_time=ticks;
@@ -329,7 +329,7 @@ fork(void)
   release(&wait_lock);
 
   acquire(&np->lock);  
-  calc_time(np);
+  calc_ptime(np);
 
   np->state = RUNNABLE;
   p->curr_time = ticks;
@@ -389,10 +389,10 @@ exit(int status)
   
   acquire(&p->lock);
   p->xstate = status;
-  calc_time(p);
+  calc_ptime(p);
   p->state = ZOMBIE;
   p->curr_time = ticks;
-  calc_single_proc(p);
+  calc_processes_mean(p);
 
   program_time += p->running_time;
   cpu_utilization = (program_time*100) / (ticks - start_time);
@@ -471,7 +471,7 @@ DEFAULT_scheduler(void)
       {
         acquire(&p->lock);
         if(p->state == RUNNING){
-          calc_time(p);
+          calc_ptime(p);
           p->state = RUNNABLE;
           p->curr_time = ticks;
           p->last_runnable_time = ticks;
@@ -485,7 +485,7 @@ DEFAULT_scheduler(void)
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
-        calc_time(p);
+        calc_ptime(p);
         p->state = RUNNING;
         p->curr_time = ticks;
         c->proc = p;
@@ -519,7 +519,7 @@ SJF_scheduler(void){
       {
         acquire(&p->lock);
         if(p->state == RUNNING){
-          calc_time(p);
+          calc_ptime(p);
           p->state = RUNNABLE;
           p->curr_time = ticks;
           p->last_runnable_time = ticks;
@@ -537,7 +537,7 @@ SJF_scheduler(void){
           }
       }
       if(p==p_torun) {
-        calc_time(p);
+        calc_ptime(p);
         p->state = RUNNING;
         p->curr_time = ticks;
         c->proc = p;
@@ -572,7 +572,7 @@ FCFS_scheduler(void){
       {
         acquire(&p->lock);
         if(p->state == RUNNING){
-          calc_time(p);
+          calc_ptime(p);
           p->state = RUNNABLE;
           p->curr_time = ticks;
           p->last_runnable_time = ticks;
@@ -590,7 +590,7 @@ FCFS_scheduler(void){
           }
       }
       if(p==p_torun) {
-          calc_time(p);
+          calc_ptime(p);
           p->state = RUNNING;
           p->curr_time = ticks;  
           c->proc = p;
@@ -657,7 +657,7 @@ yield(void)
 {
   struct proc *p = myproc();
   acquire(&p->lock);
-  calc_time(p);
+  calc_ptime(p);
   p->state = RUNNABLE;
   p->curr_time = ticks;
   p->last_runnable_time = ticks;
@@ -705,7 +705,7 @@ sleep(void *chan, struct spinlock *lk)
 
   // Go to sleep.
   p->chan = chan;
-  calc_time(p);
+  calc_ptime(p);
 
   p->state = SLEEPING;
   p->curr_time = ticks;
@@ -740,7 +740,7 @@ wakeup(void *chan)
         release(&tickslock);
       }
       if(p->state == SLEEPING && p->chan == chan) {
-        calc_time(p);
+        calc_ptime(p);
         p->state = RUNNABLE;
         p->curr_time = ticks;
         p->last_runnable_time=ticks;
@@ -765,7 +765,7 @@ kill(int pid)
     if(p->pid == pid){
       p->killed = 1;
       if(p->state == SLEEPING){
-        calc_time(p);
+        calc_ptime(p);
         // Wake process from sleep().
         p->state = RUNNABLE;
         p->curr_time = ticks;
@@ -857,7 +857,7 @@ kill_system(void)
       acquire(&p->lock);
       p->killed = 1;
       if(p->state == SLEEPING){
-        calc_time(p);
+        calc_ptime(p);
         p->state = RUNNABLE;
         p->curr_time = ticks;
         p->last_runnable_time = ticks;
@@ -887,7 +887,7 @@ print_stats(void)
 
 
 void
-calc_time(struct proc *p)
+calc_ptime(struct proc *p)
 {
   if (p->state == RUNNING){
     p->running_time += (ticks - p->curr_time); 
@@ -904,7 +904,7 @@ calc_time(struct proc *p)
 
 
 void
-calc_single_proc(struct proc *p)
+calc_processes_mean(struct proc *p)
 {
   sleeping_processes_mean = ((sleeping_processes_mean * NPROC) + p->sleeping_time) / (NPROC+1);
   running_processes_mean = ((running_processes_mean * NPROC) + p->running_time) / (NPROC+1);
