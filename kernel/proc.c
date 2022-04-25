@@ -14,8 +14,7 @@ struct proc proc[NPROC];
 struct proc *initproc;
 
 struct spinlock pauseLock;
-uint tickToPause = 0;
-int pause_flag;
+uint pause_time;
 int rate = 5;
 struct spinlock stats_lock;
 uint sleeping_processes_mean = 0;
@@ -68,9 +67,7 @@ procinit(void)
       initlock(&p->lock, "proc");
       p->kstack = KSTACK((int) (p - proc));
   }
-  acquire(&tickslock);
-  start_time=ticks;
-  release(&tickslock);
+  start_time = ticks;
 }
 
 // Must be called with interrupts disabled,
@@ -470,20 +467,18 @@ DEFAULT_scheduler(void)
 
     for(p = proc; p < &proc[NPROC]; p++) {
       //Support pause
-      if(pause_flag != 0){
-        while ((ticks - tickToPause) < 10*pause_flag)
-        {
-          acquire(&p->lock);
-          if(p->state == RUNNING){
-            calc_time(p);
-            p->state = RUNNABLE;
-            p->curr_time = ticks;
-            p-> last_runnable_time = ticks;
-          }
-          release(&p->lock);
+      while (ticks < pause_time)
+      {
+        acquire(&p->lock);
+        if(p->state == RUNNING){
+          calc_time(p);
+          p->state = RUNNABLE;
+          p->curr_time = ticks;
+          p->last_runnable_time = ticks;
         }
+        release(&p->lock);
       }
-      pause_flag = 0;
+      pause_time = 0;
 
       acquire(&p->lock);
       if(p->state == RUNNABLE) {
@@ -508,6 +503,7 @@ DEFAULT_scheduler(void)
 void
 SJF_scheduler(void){
   struct proc *p;
+  struct proc *pr;
   struct cpu *c = mycpu();
   struct proc *p_torun=0;
   
@@ -519,48 +515,39 @@ SJF_scheduler(void){
 
     for(p=proc; p < &proc[NPROC]; p++){
       //Support pause
-      if(pause_flag != 0){
-        while ((ticks - tickToPause) < 10*pause_flag)
-        {
-          acquire(&p->lock);
-          if(p->state == RUNNING){
-            calc_time(p);
-            p->state = RUNNABLE;
-            p->curr_time = ticks;
-            p-> last_runnable_time = ticks;
-          }
-          release(&p->lock);
+      while (ticks < pause_time)
+      {
+        acquire(&p->lock);
+        if(p->state == RUNNING){
+          calc_time(p);
+          p->state = RUNNABLE;
+          p->curr_time = ticks;
+          p->last_runnable_time = ticks;
         }
+        release(&p->lock);
       }
-      pause_flag = 0;
+      pause_time = 0;
 
       acquire(&p->lock);
-      if(p->state==RUNNABLE && p->mean_ticks<min_mean){
-        min_mean=p->mean_ticks;
-        p_torun=p;
+      for(pr = proc; pr < &proc[NPROC]; pr++) {
+          if (pr->mean_ticks < min_mean  && pr->state == RUNNABLE)
+          {
+            min_mean = pr->mean_ticks;
+            p_torun = pr;
+          }
+      }
+      if(p==p_torun) {
+        calc_time(p);
+        p->state = RUNNING;
+        p->curr_time = ticks;
+        c->proc = p;
+        p->last_ticks = ticks;
+        swtch(&c->context, &p->context);
+        p->last_ticks = ticks - p->last_ticks;
+        c->proc = 0;
+        p->mean_ticks = ((10-rate) * p->mean_ticks + p->last_ticks * (rate)) / 10;
       }
       release(&p->lock);
-    }
-
-    
-    if(p_torun != 0) {
-      acquire(&p_torun->lock);
-      if(p_torun->state==RUNNABLE){
-        calc_time(p);
-        p_torun->state = RUNNING;
-        p->curr_time = ticks;
-        c->proc = p_torun;
-
-        p_torun->last_ticks = ticks;
-        swtch(&c->context, &p_torun->context);
-        p_torun->last_ticks = ticks - p_torun->last_ticks;
-
-        c->proc = 0;
-        p_torun->mean_ticks = ((10-rate)*p_torun->mean_ticks + p_torun->last_ticks * (rate))/10;
-
-      }
-
-      release(&p_torun->lock);
     }
   }
 }
@@ -569,6 +556,7 @@ void
 FCFS_scheduler(void){
 
   struct proc *p;
+  struct proc *pr;
   struct cpu *c = mycpu();
   struct proc *p_torun=0;
   
@@ -580,43 +568,36 @@ FCFS_scheduler(void){
 
     for(p=proc; p < &proc[NPROC]; p++){
       //Support pause
-      if(pause_flag != 0){
-        while ((ticks - tickToPause) < 10*pause_flag)
-        {
-          acquire(&p->lock);
-          if(p->state == RUNNING){
-            calc_time(p);
-            p->state = RUNNABLE;
-            p->curr_time = ticks;
-            p-> last_runnable_time = ticks;
-          }
-          release(&p->lock);
+      while (ticks < pause_time)
+      {
+        acquire(&p->lock);
+        if(p->state == RUNNING){
+          calc_time(p);
+          p->state = RUNNABLE;
+          p->curr_time = ticks;
+          p->last_runnable_time = ticks;
         }
+        release(&p->lock);
       }
-      pause_flag = 0;
+      pause_time = 0;
 
       acquire(&p->lock);
-      if(p->state==RUNNABLE && p->last_runnable_time<lowest_last_runnable){
-        lowest_last_runnable=p->last_runnable_time;
-        p_torun=p;
+      for(pr = proc; pr < &proc[NPROC]; pr++) {
+          if (pr->last_runnable_time < lowest_last_runnable && pr->state == RUNNABLE)
+          {
+            lowest_last_runnable = pr->last_runnable_time;
+            p_torun = pr;
+          }
+      }
+      if(p==p_torun) {
+          calc_time(p);
+          p->state = RUNNING;
+          p->curr_time = ticks;  
+          c->proc = p;
+          swtch(&c->context, &p->context);
+          c->proc = 0; 
       }
       release(&p->lock);
-    }
-
-    
-    if(p_torun != 0) {
-      acquire(&p_torun->lock);
-      if(p_torun->state==RUNNABLE){
-        calc_time(p);
-        p->curr_time = ticks;
-        p_torun->state = RUNNING;
-        c->proc = p_torun;
-
-        swtch(&c->context, &p_torun->context);
-
-        c->proc = 0;
-      }
-      release(&p_torun->lock);
     }
   }
 }
@@ -860,8 +841,7 @@ procdump(void)
 int
 pause_system(int seconds)
 {
-  pause_flag = seconds;
-  tickToPause = ticks;
+  pause_time = ticks + (seconds*10);
   yield();
   return 0;
 }
@@ -880,7 +860,7 @@ kill_system(void)
         calc_time(p);
         p->state = RUNNABLE;
         p->curr_time = ticks;
-        p->last_runnable_time  = ticks;
+        p->last_runnable_time = ticks;
       }
       release(&p->lock);
     }
@@ -899,7 +879,7 @@ print_stats(void)
   printf("running processes mean: %d \n", running_processes_mean);
   printf("runnable processes mean: %d \n", runnable_processes_mean);
   printf("program time: %d \n", program_time);
-  printf("cpu utilization: %d \n", cpu_utilization);
+  printf("cpu utilization: %d% \n", cpu_utilization);
   printf("--------------------------------------- \n");
   release(&stats_lock);
   return 0;
